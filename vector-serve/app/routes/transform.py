@@ -45,8 +45,10 @@ def batch_transform(
 
     chunked_input = []
     for doc in payload.input:
-        chunked_input.extend(recursive_text_chunk(doc, chunk_size=1000, chunk_overlap=200))
-        
+        chunked_input.extend(
+            recursive_text_chunk(doc, chunk_size=1000, chunk_overlap=200)
+        )
+
     batches = chunk_list(payload.input, BATCH_SIZE)
     num_batches = len(batches)
     responses: list[list[float]] = []
