@@ -108,31 +108,31 @@ impl EmbeddingProvider for CohereProvider {
     }
 }
 
-// #[cfg(test)]
-// mod integration_tests {
-//     use super::*;
-//     use tokio::test as async_test;
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use tokio::test as async_test;
 
-//     #[async_test]
-//     async fn test_generate_embedding() {
-//         let provider = CohereProvider::new(Some(COHERE_BASE_URL.to_string()), None);
-//         let request = GenericEmbeddingRequest {
-//             model: "embed-english-light-v3.0".to_string(),
-//             input: vec!["hello world".to_string()],
-//         };
+    #[async_test]
+    async fn test_generate_embedding() {
+        let provider = CohereProvider::new(Some(COHERE_BASE_URL.to_string()), None);
+        let request = GenericEmbeddingRequest {
+            model: "embed-english-light-v3.0".to_string(),
+            input: vec!["hello world".to_string()],
+        };
 
-//         let embeddings = provider.generate_embedding(&request).await.unwrap();
-//         assert!(
-//             !embeddings.embeddings.is_empty(),
-//             "Embeddings should not be empty"
-//         );
-//         assert!(
-//             embeddings.embeddings.len() == 1,
-//             "Embeddings should have length 1"
-//         );
-//         assert!(
-//             embeddings.embeddings[0].len() == 384,
-//             "Embeddings should have length 384"
-//         );
-//     }
-// }
+        let embeddings = provider.generate_embedding(&request).await.unwrap();
+        assert!(
+            !embeddings.embeddings.is_empty(),
+            "Embeddings should not be empty"
+        );
+        assert!(
+            embeddings.embeddings.len() == 1,
+            "Embeddings should have length 1"
+        );
+        assert!(
+            embeddings.embeddings[0].len() == 384,
+            "Embeddings should have length 384"
+        );
+    }
+}

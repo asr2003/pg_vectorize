@@ -178,103 +178,103 @@ pub fn trim_inputs(inputs: &[Inputs]) -> Vec<String> {
         .collect()
 }
 
-// #[cfg(test)]
-// mod integration_tests {
-//     use super::*;
-//     use tokio::test as async_test;
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use tokio::test as async_test;
 
-//     #[async_test]
-//     async fn test_generate_embedding() {
-//         let provider = OpenAIProvider::new(Some(OPENAI_BASE_URL.to_string()), None);
-//         let request = GenericEmbeddingRequest {
-//             model: "text-embedding-ada-002".to_string(),
-//             input: vec!["hello world".to_string()],
-//         };
+    #[async_test]
+    async fn test_generate_embedding() {
+        let provider = OpenAIProvider::new(Some(OPENAI_BASE_URL.to_string()), None);
+        let request = GenericEmbeddingRequest {
+            model: "text-embedding-ada-002".to_string(),
+            input: vec!["hello world".to_string()],
+        };
 
-//         let embeddings = provider.generate_embedding(&request).await.unwrap();
-//         assert!(
-//             !embeddings.embeddings.is_empty(),
-//             "Embeddings should not be empty"
-//         );
-//         assert!(
-//             embeddings.embeddings.len() == 1,
-//             "Embeddings should have length 1"
-//         );
-//         assert!(
-//             embeddings.embeddings[0].len() == 1536,
-//             "Embeddings should have length 1536"
-//         );
-//     }
-// }
+        let embeddings = provider.generate_embedding(&request).await.unwrap();
+        assert!(
+            !embeddings.embeddings.is_empty(),
+            "Embeddings should not be empty"
+        );
+        assert!(
+            embeddings.embeddings.len() == 1,
+            "Embeddings should have length 1"
+        );
+        assert!(
+            embeddings.embeddings[0].len() == 1536,
+            "Embeddings should have length 1536"
+        );
+    }
+}
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn test_trim_inputs_no_trimming_required() {
-//         let data = vec![
-//             Inputs {
-//                 record_id: "1".to_string(),
-//                 inputs: "token1 token2".to_string(),
-//                 token_estimate: 2,
-//             },
-//             Inputs {
-//                 record_id: "2".to_string(),
-//                 inputs: "token3 token4".to_string(),
-//                 token_estimate: 2,
-//             },
-//         ];
+    #[test]
+    fn test_trim_inputs_no_trimming_required() {
+        let data = vec![
+            Inputs {
+                record_id: "1".to_string(),
+                inputs: "token1 token2".to_string(),
+                token_estimate: 2,
+            },
+            Inputs {
+                record_id: "2".to_string(),
+                inputs: "token3 token4".to_string(),
+                token_estimate: 2,
+            },
+        ];
 
-//         let trimmed = trim_inputs(&data);
-//         assert_eq!(trimmed, vec!["token1 token2", "token3 token4"]);
-//     }
+        let trimmed = trim_inputs(&data);
+        assert_eq!(trimmed, vec!["token1 token2", "token3 token4"]);
+    }
 
-//     #[test]
-//     fn test_trim_inputs_trimming_required() {
-//         let token_len = 1000000;
-//         let long_input = (0..token_len)
-//             .map(|i| format!("token{}", i))
-//             .collect::<Vec<_>>()
-//             .join(" ");
+    #[test]
+    fn test_trim_inputs_trimming_required() {
+        let token_len = 1000000;
+        let long_input = (0..token_len)
+            .map(|i| format!("token{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
 
-//         let num_tokens = long_input.split_whitespace().count();
-//         assert_eq!(num_tokens, token_len);
+        let num_tokens = long_input.split_whitespace().count();
+        assert_eq!(num_tokens, token_len);
 
-//         let data = vec![Inputs {
-//             record_id: "1".to_string(),
-//             inputs: long_input.clone(),
-//             token_estimate: token_len as i32,
-//         }];
+        let data = vec![Inputs {
+            record_id: "1".to_string(),
+            inputs: long_input.clone(),
+            token_estimate: token_len as i32,
+        }];
 
-//         let trimmed = trim_inputs(&data);
-//         let trimmed_input = trimmed[0].clone();
-//         let trimmed_length = trimmed_input.split_whitespace().count();
-//         assert_eq!(trimmed_length, MAX_TOKEN_LEN);
-//     }
+        let trimmed = trim_inputs(&data);
+        let trimmed_input = trimmed[0].clone();
+        let trimmed_length = trimmed_input.split_whitespace().count();
+        assert_eq!(trimmed_length, MAX_TOKEN_LEN);
+    }
 
-//     #[test]
-//     fn test_trim_inputs_mixed_cases() {
-//         let num_tokens_in = 1000000;
-//         let long_input = (0..num_tokens_in)
-//             .map(|i| format!("token{}", i))
-//             .collect::<Vec<_>>()
-//             .join(" ");
-//         let data = vec![
-//             Inputs {
-//                 record_id: "1".to_string(),
-//                 inputs: "token1 token2".to_string(),
-//                 token_estimate: 2,
-//             },
-//             Inputs {
-//                 record_id: "2".to_string(),
-//                 inputs: long_input.clone(),
-//                 token_estimate: num_tokens_in,
-//             },
-//         ];
+    #[test]
+    fn test_trim_inputs_mixed_cases() {
+        let num_tokens_in = 1000000;
+        let long_input = (0..num_tokens_in)
+            .map(|i| format!("token{}", i))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let data = vec![
+            Inputs {
+                record_id: "1".to_string(),
+                inputs: "token1 token2".to_string(),
+                token_estimate: 2,
+            },
+            Inputs {
+                record_id: "2".to_string(),
+                inputs: long_input.clone(),
+                token_estimate: num_tokens_in,
+            },
+        ];
 
-//         let trimmed = trim_inputs(&data);
-//         assert_eq!(trimmed[0].split_whitespace().count(), 2);
-//         assert_eq!(trimmed[1].split_whitespace().count(), MAX_TOKEN_LEN);
-//     }
-// }
+        let trimmed = trim_inputs(&data);
+        assert_eq!(trimmed[0].split_whitespace().count(), 2);
+        assert_eq!(trimmed[1].split_whitespace().count(), MAX_TOKEN_LEN);
+    }
+}
