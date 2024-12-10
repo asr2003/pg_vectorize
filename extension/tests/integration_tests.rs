@@ -54,6 +54,58 @@ async fn test_scheduled_job() {
 
 #[ignore]
 #[tokio::test]
+async fn test_chunk_table() {
+    let conn = common::init_database().await;
+
+    let test_table_name = "test_chunk_input";
+    let chunked_table_name = "test_chunk_output";
+    let columns = vec!["text_column".to_string()];
+
+    common::execute_query(
+        &conn,
+        &format!(
+            "CREATE TABLE {test_table_name} (id SERIAL PRIMARY KEY, text_column TEXT);"
+        ),
+    )
+    .await;
+
+    common::execute_query(
+        &conn,
+        &format!(
+            "INSERT INTO {test_table_name} (text_column) VALUES
+            ('This is the first text.'),
+            ('This is the second text which is quite longer to test chunking.'),
+            ('A short one.');
+            "
+        ),
+    )
+    .await;
+
+    chunk_table(
+        test_table_name,
+        columns,
+        20,
+        5,
+        chunked_table_name,
+        "public",
+    )
+    .await
+    .expect("Failed to chunk table");
+
+    let rows: Vec<common::ChunkedRow> = sqlx::query_as(&format!(
+        "SELECT * FROM {chunked_table_name} ORDER BY id;"
+    ))
+    .fetch_all(&conn)
+    .await
+    .expect("Failed to fetch chunked rows");
+
+    assert_eq!(rows.len(), 7);
+    assert!(rows.iter().any(|row| row.chunk.contains("first text")));
+    assert!(rows.iter().any(|row| row.chunk.contains("short one")));
+}
+
+#[ignore]
+#[tokio::test]
 async fn test_scheduled_single_table() {
     let conn = common::init_database().await;
     let mut rng = rand::thread_rng();
