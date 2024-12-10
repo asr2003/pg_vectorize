@@ -225,14 +225,17 @@ pub fn chunk_text(text: &str, chunk_size: usize, chunk_overlap: usize) -> Vec<St
         // Try to split the text based on the separators
         for sep in &separators {
             let slice = &text[start..];
-            let end_pos = slice.find(sep).unwrap_or(slice.len());
+            if let Some(end_pos) = slice.find(sep) {
+                let candidate_chunk_len = end_pos - start;
 
-            if end_pos - start >= chunk_size {
-                let chunk = &text[start..start + chunk_size].to_string();
-                chunks.push(chunk.clone());
-                start += chunk_size - chunk_overlap;
-                chunk_found = true;
-                break;
+                if candidate_chunk_len >= chunk_size {
+                    let end = start + chunk_size;
+                    let chunk = &text[start..end];
+                    chunks.push(chunk.to_string());
+                    start += chunk_size.saturating_sub(chunk_overlap);
+                    chunk_found = true;
+                    break;
+                }
             }
         }
 
@@ -240,7 +243,7 @@ pub fn chunk_text(text: &str, chunk_size: usize, chunk_overlap: usize) -> Vec<St
         if !chunk_found {
             let end = std::cmp::min(start + chunk_size, text.len());
             chunks.push(text[start..end].to_string());
-            start += chunk_size - chunk_overlap;
+            start += chunk_size.saturating_sub(chunk_overlap);
         }
     }
 
