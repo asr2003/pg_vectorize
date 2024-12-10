@@ -221,10 +221,11 @@ pub fn chunk_text(text: &str, chunk_size: usize, chunk_overlap: usize) -> Vec<St
 
     while start < text.len() {
         let mut chunk_found = false;
-
+        
         // Try to split the text based on the separators
         for sep in &separators {
-            let end_pos = text[start..].find(sep).unwrap_or(text.len());
+            let slice = &text[start..];
+            let end_pos = slice.find(sep).unwrap_or(slice.len());
 
             if end_pos - start >= chunk_size {
                 let chunk = &text[start..start + chunk_size].to_string();
