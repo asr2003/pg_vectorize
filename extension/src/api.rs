@@ -5,7 +5,7 @@ use crate::search::{self, init_table};
 use crate::transformers::generic::env_interpolate_string;
 use crate::transformers::transform;
 use crate::types;
-use crate::util::*;
+use crate::util::{chunk_text, fetch_table_rows};
 
 use anyhow::Result;
 use pgrx::prelude::*;
@@ -104,7 +104,7 @@ pub fn insert_chunk_into_table(
 #[pg_extern]
 async fn chunk_table(
     input_table: &str,
-    columns: Vec<String>,
+    columns: Vec<&str>,
     chunk_size: default!(i32, 1000),
     chunk_overlap: default!(i32, 200),
     output_table: &str,
@@ -117,14 +117,14 @@ async fn chunk_table(
 
     for row in rows {
         for col in &columns {
-            if let Some(text) = row.get(col) {
-                let chunks = crate::util::chunk_text(text, chunk_size as usize, chunk_overlap as usize);
+            if let Some(text) = row.try_get::<String, _>(col).ok() {
+                let chunks = chunk_text(&text, chunk_size as usize, chunk_overlap as usize);
                 // Insert each chunk as a new row in the output table
                 for chunk in chunks {
                     insert_chunk_into_table(
                         output_table,
                         chunk,
-                        row.get("primary_key").unwrap(),
+                        row.try_get("id")?
                         schema,
                     )?;
                 }
