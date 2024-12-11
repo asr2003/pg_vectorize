@@ -254,12 +254,10 @@ pub fn chunk_text(text: &str, chunk_size: usize, chunk_overlap: usize) -> Vec<St
 pub async fn fetch_table_rows(
     conn: &Pool<Postgres>,
     table: &str,
-    columns: Vec<String>,
+    columns: Vec<&str>,
     schema: &str,
 ) -> Result<Vec<sqlx::postgres::PgRow>> {
     let query = format!("SELECT {} FROM {}.{}", columns.join(", "), schema, table);
-
-    // Execute the query using sqlx and fetch the rows
     let rows = sqlx::query(&query).fetch_all(conn).await?;
     Ok(rows)
 }
