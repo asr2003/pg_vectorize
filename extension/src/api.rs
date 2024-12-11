@@ -9,11 +9,13 @@ use crate::util::*;
 
 use anyhow::Result;
 use pgrx::prelude::*;
+use pgrx::PgOid;
+use sqlx::Row;
 use vectorize_core::types::Model;
 
 #[allow(clippy::too_many_arguments)]
 #[pg_extern]
-fn table(
+async fn table(
     table: &str,
     columns: Vec<String>,
     job_name: &str,
@@ -35,11 +37,12 @@ fn table(
         chunk_table(
             table,
             columns.clone(),
-            chunk_size.unwrap_or(1000),
+            chunk_size,
             chunk_overlap.unwrap_or(200),
             &chunked_table_name,
             schema,
-        )?;
+        )
+        .await?;
         chunked_table_name
     } else {
         table.to_string()
@@ -49,7 +52,7 @@ fn table(
     init_table(
         job_name,
         schema,
-        &chunked_table_name,
+        &processed_table,
         columns,
         primary_key,
         Some(update_col),
@@ -87,7 +90,13 @@ pub fn insert_chunk_into_table(
     let query = format!(
         "INSERT INTO {schema}.{table_name} (original_id, chunk) VALUES ($1, $2);"
     );
-    Spi::run_with_args(&query, &[original_id.into_datum(), chunk.into_datum()])?;
+    Spi::run_with_args(
+        &query,
+        Some(vec![
+            (PgOid::from(23), Some(original_id.into_datum().unwrap())),
+            (PgOid::from(25), Some(chunk.into_datum().unwrap())),
+        ]),
+    )?;
     Ok(())
 }
 
