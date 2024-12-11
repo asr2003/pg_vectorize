@@ -118,8 +118,7 @@ async fn chunk_table(
     for row in rows {
         for col in &columns {
             if let Some(text) = row.get(col) {
-                let chunks =
-                    chunking::chunk_text(text, chunk_size as usize, chunk_overlap as usize);
+                let chunks = crate::util::chunk_text(text, chunk_size as usize, chunk_overlap as usize);
                 // Insert each chunk as a new row in the output table
                 for chunk in chunks {
                     insert_chunk_into_table(
