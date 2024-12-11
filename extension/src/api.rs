@@ -5,9 +5,13 @@ use crate::search::{self, init_table};
 use crate::transformers::generic::env_interpolate_string;
 use crate::transformers::transform;
 use crate::types;
+use crate::util::{chunk_text, fetch_table_rows};
 
 use anyhow::Result;
 use pgrx::prelude::*;
+use pgrx::PgOid;
+use sqlx::Row;
+use pgrx::pg_sys::Oid;
 use vectorize_core::types::Model;
 
 #[allow(clippy::too_many_arguments)]
@@ -21,15 +25,34 @@ fn table(
     update_col: default!(String, "'last_updated_at'"),
     index_dist_type: default!(types::IndexDist, "'pgv_hnsw_cosine'"),
     transformer: default!(&str, "'sentence-transformers/all-MiniLM-L6-v2'"),
+    chunk_size: default!(Option<i32>, "NULL"),
+    chunk_overlap: default!(Option<i32>, "NULL"),
+    // search_alg is now deprecated
+    search_alg: default!(types::SimilarityAlg, "'pgv_cosine_similarity'"),
     table_method: default!(types::TableMethod, "'join'"),
     // cron-like for a cron based update model, or 'realtime' for a trigger-based
     schedule: default!(&str, "'* * * * *'"),
 ) -> Result<String> {
+    let processed_table = if let Some(chunk_size) = chunk_size {
+        let chunked_table_name = format!("{}_chunked", table);
+        crate::chunk_table(
+            table,
+            columns.iter().map(|c| c.as_str()).collect(),
+            chunk_size,
+            chunk_overlap.unwrap_or(200),
+            &chunked_table_name,
+            schema,
+        )?;
+        chunked_table_name
+    } else {
+        table.to_string()
+    };
+
     let model = Model::new(transformer)?;
     init_table(
         job_name,
         schema,
-        table,
+        &processed_table,
         columns,
         primary_key,
         Some(update_col),
@@ -38,6 +61,87 @@ fn table(
         table_method.into(),
         schedule,
     )
+}
+
+/// Create a chunked table with the necessary schema
+pub fn create_chunked_table(
+    table_name: &str,
+    columns: Vec<String>,
+    schema: &str,
+) -> Result<()> {
+    let query = format!(
+        "CREATE TABLE {schema}.{table_name} (
+            id SERIAL PRIMARY KEY,
+            original_id INTEGER,
+            chunk TEXT
+        );"
+    );
+    Spi::run(&query)?;
+    Ok(())
+}
+
+/// Insert a chunk into the chunked table
+pub fn insert_chunk_into_table(
+    table_name: &str,
+    chunk: String,
+    original_id: i32,
+    schema: &str,
+) -> Result<()> {
+    let query = format!(
+        "INSERT INTO {schema}.{table_name} (original_id, chunk) VALUES ($1, $2);"
+    );
+    Spi::run_with_args(
+        &query,
+        Some(vec![
+            (PgOid::from(Oid::from_u32(23)), Some(original_id.into_datum().unwrap())),
+            (PgOid::from(Oid::from_u32(25)), Some(chunk.into_datum().unwrap())),
+        ]),
+    )?;
+    Ok(())
+}
+
+/// Utility function to chunk the rows of a table and store them in a new table
+#[pg_extern]
+pub fn chunk_table(
+    input_table: &str,
+    columns: Vec<&str>,
+    chunk_size: i32,
+    chunk_overlap: i32,
+    output_table: &str,
+    schema: &str,
+) -> Result<String> {
+
+    create_chunked_table(output_table, columns.iter().map(|&s| s.to_string()).collect(), schema)?;
+    let query = format!(
+        "SELECT id, {} FROM {}.{}",
+        columns.join(", "),
+        schema,
+        input_table
+    );
+
+
+    let rows: Vec<(i32, String)> = Spi::connect(|client| {
+        client.select(&query, None, None)
+            .map(|row| {
+                let id: i32 = row.get("id");
+                let text: String = row.get(&columns[0]);
+                (id, text)
+            })
+            .collect()
+    })?;
+
+    // Chunk the rows and insert into the new table
+    for (id, text) in rows {
+        let chunks = chunk_text(&text, chunk_size as usize, chunk_overlap as usize);
+        for chunk in chunks {
+            insert_chunk_into_table(output_table, chunk, id, schema)?;
+        }
+    }
+
+    Ok(format!(
+        "Data from {} successfully chunked into {}",
+        input_table, output_table
+    ))
 }
 
 #[pg_extern]

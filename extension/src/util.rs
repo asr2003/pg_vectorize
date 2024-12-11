@@ -2,7 +2,7 @@ use anyhow::Result;
 use pgrx::spi::SpiTupleTable;
 use pgrx::*;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Row};
 use std::env;
 use url::{ParseError, Url};
 
@@ -211,4 +211,53 @@ pub async fn ready(conn: &Pool<Postgres>) -> bool {
     .fetch_one(conn)
     .await
     .expect("failed")
+}
+
+/// Recursive split text based on separators
+pub fn chunk_text(text: &str, chunk_size: usize, chunk_overlap: usize) -> Vec<String> {
+    let separators = vec!["\n\n", "\n", " ", ""];
+    let mut chunks = Vec::new();
+    let mut start = 0;
+
+    while start < text.len() {
+        let mut chunk_found = false;
+        
+        // Try to split the text based on the separators
+        for sep in &separators {
+            let slice = &text[start..];
+            if let Some(end_pos) = slice.find(sep) {
+                let candidate_chunk_len = end_pos - start;
+
+                if candidate_chunk_len >= chunk_size {
+                    let end = start + chunk_size;
+                    let chunk = &text[start..end];
+                    chunks.push(chunk.to_string());
+                    start += chunk_size.saturating_sub(chunk_overlap);
+                    chunk_found = true;
+                    break;
+                }
+            }
+        }
+
+        // Fallback if no suitable separator is found, chunk by size
+        if !chunk_found {
+            let end = std::cmp::min(start + chunk_size, text.len());
+            chunks.push(text[start..end].to_string());
+            start += chunk_size.saturating_sub(chunk_overlap);
+        }
+    }
+
+    chunks
+}
+
+/// Fetch rows from a given table and schema
+pub async fn fetch_table_rows(
+    conn: &Pool<Postgres>,
+    table: &str,
+    columns: Vec<&str>,
+    schema: &str,
+) -> Result<Vec<sqlx::postgres::PgRow>> {
+    let query = format!("SELECT {} FROM {}.{}", columns.join(", "), schema, table);
+    let rows = sqlx::query(&query).fetch_all(conn).await?;
+    Ok(rows)
 }
