@@ -30,15 +30,20 @@ fn table(
     // cron-like for a cron based update model, or 'realtime' for a trigger-based
     schedule: default!(&str, "'* * * * *'"),
 ) -> Result<String> {
-    let chunked_table_name = format!("{}_chunked", table);
-    chunk_table(
-        table,
-        columns.clone(),
-        chunk_size.unwrap_or(1000),
-        chunk_overlap.unwrap_or(200),
-        &chunked_table_name,
-        schema,
-    )?;
+    let processed_table = if let Some(chunk_size) = chunk_size {
+        let chunked_table_name = format!("{}_chunked", table);
+        chunk_table(
+            table,
+            columns.clone(),
+            chunk_size.unwrap_or(1000),
+            chunk_overlap.unwrap_or(200),
+            &chunked_table_name,
+            schema,
+        )?;
+        chunked_table_name
+    } else {
+        table.to_string()
+    };
 
     let model = Model::new(transformer)?;
     init_table(
@@ -53,6 +58,37 @@ fn table(
         table_method.into(),
         schedule,
     )
+}
+
+/// Create a chunked table with the necessary schema
+pub fn create_chunked_table(
+    table_name: &str,
+    columns: Vec<String>,
+    schema: &str,
+) -> Result<()> {
+    let query = format!(
+        "CREATE TABLE {schema}.{table_name} (
+            id SERIAL PRIMARY KEY,
+            original_id INTEGER,
+            chunk TEXT
+        );"
+    );
+    Spi::run(&query)?;
+    Ok(())
+}
+
+/// Insert a chunk into the chunked table
+pub fn insert_chunk_into_table(
+    table_name: &str,
+    chunk: String,
+    original_id: i32,
+    schema: &str,
+) -> Result<()> {
+    let query = format!(
+        "INSERT INTO {schema}.{table_name} (original_id, chunk) VALUES ($1, $2);"
+    );
+    Spi::run_with_args(&query, &[original_id.into_datum(), chunk.into_datum()])?;
+    Ok(())
 }
 
 /// Utility function to chunk the rows of a table and store them in a new table
