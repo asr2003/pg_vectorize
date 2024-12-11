@@ -59,6 +59,7 @@ async fn test_vectorize_table_with_chunking() {
     let mut rng = rand::thread_rng();
     let test_num = rng.gen_range(1..100000);
     let test_table_name = format!("products_test_{}", test_num);
+    let chunked_table_name = format!("{}_chunked", test_table_name);
     let job_name = format!("job_{}", test_num);
 
     common::init_test_table(&test_table_name, &conn).await;
@@ -85,11 +86,11 @@ async fn test_vectorize_table_with_chunking() {
     .await;
 
     chunk_table(
-        test_table_name,
-        columns,
-        20,
-        5,
-        chunked_table_name,
+        &test_table_name,
+        vec!["text_column"],
+        50,
+        10,
+        &chunked_table_name,
         "public",
     )
     .await
@@ -111,7 +112,6 @@ async fn test_vectorize_table_with_chunking() {
     .await
     .expect("failed to initialize vectorize table with chunking");
 
-    let chunked_table_name = format!("{}_chunked", test_table_name);
     let rows: Vec<common::ChunkedRow> = sqlx::query_as(&format!(
         "SELECT * FROM {chunked_table_name} ORDER BY id;"
     ))
