@@ -11,11 +11,12 @@ use anyhow::Result;
 use pgrx::prelude::*;
 use pgrx::PgOid;
 use sqlx::Row;
+use pgrx::pg_sys::Oid;
 use vectorize_core::types::Model;
 
 #[allow(clippy::too_many_arguments)]
 #[pg_extern]
-async fn table(
+fn table(
     table: &str,
     columns: Vec<String>,
     job_name: &str,
@@ -34,15 +35,14 @@ async fn table(
 ) -> Result<String> {
     let processed_table = if let Some(chunk_size) = chunk_size {
         let chunked_table_name = format!("{}_chunked", table);
-        chunk_table(
+        crate::chunk_table(
             table,
-            columns.clone(),
+            columns.iter().map(|c| c.as_str()).collect(),
             chunk_size,
             chunk_overlap.unwrap_or(200),
             &chunked_table_name,
             schema,
-        )
-        .await?;
+        )?;
         chunked_table_name
     } else {
         table.to_string()
@@ -93,8 +93,8 @@ pub fn insert_chunk_into_table(
     Spi::run_with_args(
         &query,
         Some(vec![
-            (PgOid::from(23), Some(original_id.into_datum().unwrap())),
-            (PgOid::from(25), Some(chunk.into_datum().unwrap())),
+            (PgOid::from(Oid::from_u32(23)), Some(original_id.into_datum().unwrap())),
+            (PgOid::from(Oid::from_u32(25)), Some(chunk.into_datum().unwrap())),
         ]),
     )?;
     Ok(())
@@ -102,33 +102,39 @@ pub fn insert_chunk_into_table(
 
 /// Utility function to chunk the rows of a table and store them in a new table
 #[pg_extern]
-async fn chunk_table(
+pub fn chunk_table(
     input_table: &str,
     columns: Vec<&str>,
-    chunk_size: default!(i32, 1000),
-    chunk_overlap: default!(i32, 200),
+    chunk_size: i32,
+    chunk_overlap: i32,
     output_table: &str,
-    schema: default!(&str, "'public'"),
+    schema: &str,
 ) -> Result<String> {
-    let conn = get_pg_conn().await?;
 
-    let rows = fetch_table_rows(&conn, input_table, columns.clone(), schema).await?;
-    create_chunked_table(output_table, columns.clone(), schema)?;
+    create_chunked_table(output_table, columns.iter().map(|&s| s.to_string()).collect(), schema)?;
+    let query = format!(
+        "SELECT id, {} FROM {}.{}",
+        columns.join(", "),
+        schema,
+        input_table
+    );
 
-    for row in rows {
-        for col in &columns {
-            if let Some(text) = row.try_get::<String, _>(col).ok() {
-                let chunks = chunk_text(&text, chunk_size as usize, chunk_overlap as usize);
-                // Insert each chunk as a new row in the output table
-                for chunk in chunks {
-                    insert_chunk_into_table(
-                        output_table,
-                        chunk,
-                        row.try_get("id")?
-                        schema,
-                    )?;
-                }
-            }
+
+    let rows: Vec<(i32, String)> = Spi::connect(|client| {
+        client.select(&query, None, None)
+            .map(|row| {
+                let id: i32 = row.get("id");
+                let text: String = row.get(&columns[0]);
+                (id, text)
+            })
+            .collect()
+    })?;
+
+    // Chunk the rows and insert into the new table
+    for (id, text) in rows {
+        let chunks = chunk_text(&text, chunk_size as usize, chunk_overlap as usize);
+        for chunk in chunks {
+            insert_chunk_into_table(output_table, chunk, id, schema)?;
         }
     }
 
