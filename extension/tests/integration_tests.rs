@@ -54,6 +54,84 @@ async fn test_scheduled_job() {
 
 #[ignore]
 #[tokio::test]
+async fn test_vectorize_table_with_chunking() {
+    let conn = common::init_database().await;
+    let mut rng = rand::thread_rng();
+    let test_num = rng.gen_range(1..100000);
+    let test_table_name = format!("products_test_{}", test_num);
+    let chunked_table_name = format!("{}_chunked", test_table_name);
+    let job_name = format!("job_{}", test_num);
+
+    common::init_test_table(&test_table_name, &conn).await;
+    common::init_embedding_svc_url(&conn).await;
+
+    common::execute_query(
+        &conn,
+        &format!(
+            "CREATE TABLE {test_table_name} (id SERIAL PRIMARY KEY, text_column TEXT);"
+        ),
+    )
+    .await;
+
+    common::execute_query(
+        &conn,
+        &format!(
+            "INSERT INTO {test_table_name} (text_column) VALUES
+            ('This is the first text.'),
+            ('A very long text that should be chunked properly to test integration with vectorize.table function.'),
+            ('Another short one for variety.');
+            "
+        ),
+    )
+    .await;
+
+    chunk_table(
+        &test_table_name,
+        vec!["text_column"],
+        50,
+        10,
+        &chunked_table_name,
+        "public",
+    )
+    .await
+    .expect("Failed to chunk table");
+
+    let _ = sqlx::query(&format!(
+        "SELECT vectorize.table(
+        job_name => '{job_name}',
+        \"table\" => '{test_table_name}',
+        primary_key => 'id',
+        columns => ARRAY['text_column'],
+        transformer => 'sentence-transformers/all-MiniLM-L6-v2',
+        chunk_size => 50,
+        chunk_overlap => 10,
+        schedule => '* * * * *'
+    );"
+    ))
+    .execute(&conn)
+    .await
+    .expect("failed to initialize vectorize table with chunking");
+
+    let rows: Vec<common::ChunkedRow> = sqlx::query_as(&format!(
+        "SELECT * FROM {chunked_table_name} ORDER BY id;"
+    ))
+    .fetch_all(&conn)
+    .await
+    .expect("Failed to fetch chunked rows");
+
+    assert!(rows.len() > 1, "Expected more than one chunked row.");
+    assert!(
+        rows.iter().any(|row| row.chunk.contains("first text")),
+        "Expected chunk with 'first text'."
+    );
+    assert!(
+        rows.iter().any(|row| row.chunk.contains("Another short one")),
+        "Expected chunk with 'Another short one'."
+    );
+}
+
+#[ignore]
+#[tokio::test]
 async fn test_scheduled_single_table() {
     let conn = common::init_database().await;
     let mut rng = rand::thread_rng();
